@@ -1,0 +1,67 @@
+# -----------------------------------------------------------------------------
+# Author: Jamiu Ejiwumi
+# Date: 09/01/2025
+# Description: Build pipeline template for building and publishing our solutions.
+# -----------------------------------------------------------------------------
+
+resources:
+  repositories: 
+    - repository: AzurePipelineTemplates
+      type: git
+      name: DevOps.Tasks.Projects/AzurePipelineTemplates
+      ref: refs/heads/main
+      endpoint: devops-template-conn
+
+trigger:
+  branches:
+    include:
+      - Development
+      - develop
+      - main
+      - Release
+
+pr:
+  branches:
+    include:
+      - main
+
+parameters:
+  # This parameter is meant to control whether to run advanced security tasks
+  - name: runAdvancedSecurity
+    type: boolean
+    default: false
+
+name: $(SourceBranchName)_$(Build.BuildId)_$(date:yyyyMMdd)$(rev:.r)
+
+stages:
+  - template: templates/build/umbraco-build-template.yml@AzurePipelineTemplates
+    parameters:
+      stageName: Build
+      runAdvancedSecurity: false
+
+  - template: templates/deploy/umbraco-deploy-template.yml@AzurePipelineTemplates
+    parameters:
+      WebAppName: 'UmbracoCms-Dev'
+      environment: 'Development'
+      vmImageName: 'windows-latest'
+      stageName: DeployToDevStaging
+      swapStageName: SwapSlotsStaging
+      dependsOn: Build
+      azureServiceConnection: 'Dev/Test - WebServices'
+      resourceGroupName: 'etics-rg' 
+      deployToSlotOrASE: false
+      slotName: 'test'
+
+  # Production deployment stage
+  - template: templates/deploy/umbraco-deploy-template.yml@AzurePipelineTemplates
+    parameters:
+      WebAppName: 'UmbracoCms-Prod'
+      environment: 'Production'
+      vmImageName: 'windows-latest'
+      stageName: DeployToProdLive
+      swapStageName: SwapSlotsProduction
+      dependsOn: DeployToDevStaging
+      azureServiceConnection: 'WebServices'
+      resourceGroupName: 'eticsProd-rg' 
+      deployToSlotOrASE: false
+      slotName: 'prerelease'

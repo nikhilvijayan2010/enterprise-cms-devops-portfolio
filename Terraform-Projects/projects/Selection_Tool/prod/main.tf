@@ -11,7 +11,7 @@ terraform {
   backend "azurerm" {
     resource_group_name  = "TerraformRG"
     storage_account_name = "terraformsa1203"
-    container_name       = "rlvaritytoolstateprod"
+    container_name       = "ytoolstateprod"
     key                  = "terraform.tfstate"
   }
 }
@@ -26,7 +26,7 @@ provider "azurerm" {
 }
 
 locals {
-  base_name = "RLVarietySelectionToolProd"
+  base_name = "ionToolProd"
 }
 
 # Resource Group Module
@@ -56,12 +56,12 @@ data "azurerm_key_vault" "example" {
 }
 
 data "azurerm_key_vault_secret" "sql_admin_username" {
-  name         = "rlvst-sql-admin-username"
+  name         = "sql-admin-username"
   key_vault_id = data.azurerm_key_vault.example.id
 }
 
 data "azurerm_key_vault_secret" "sql_admin_password" {
-  name         = "rlvst-sql-admin-username"
+  name         = "sql-admin-username"
   key_vault_id = data.azurerm_key_vault.example.id
 }
 

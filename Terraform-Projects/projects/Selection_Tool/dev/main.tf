@@ -11,7 +11,7 @@ terraform {
   backend "azurerm" {
     resource_group_name  = "TerraformRG"
     storage_account_name = "terraformsa1203"
-    container_name       = "rlvaritytoolstate"
+    container_name       = "aritytoolstate"
     key                  = "terraform.tfstate"
   }
 }

@@ -12,7 +12,7 @@ variables:
   backendServiceArm: 'DevTestServiceConn'
   resourceGroupName: 'TerraformRG'
   storageAccountName: 'terraformsa1203'
-  containerName: 'rlvaritytoolstateprod'
+  containerName: 'toolstateprod'
   tfStateKey: 'terraform.tfstate'
 
 stages:
