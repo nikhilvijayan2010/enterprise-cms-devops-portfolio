@@ -1,0 +1,158 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:      
+  - stage: tfdestroy
+    jobs:
+      - job: destroy
+        steps:
+        - task: TerraformInstaller@1
+          displayName: tfinstall
+          inputs:
+            terraformVersion: 'latest'
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: 'DevTestServiceConn'
+            backendAzureRmResourceGroupName: 'TerraformRG'
+            backendAzureRmStorageAccountName: 'terraformsa1203'
+            backendAzureRmContainerName: 'tfstate'
+            backendAzureRmKey: 'terraform.tfstate'
+          
+        - task: TerraformTaskV4@4
+          displayName: plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            environmentServiceNameAzureRM: 'DevTestServiceConn'
+        
+        - task: TerraformTaskV4@4
+          displayName: destroy
+          inputs:
+            provider: 'azurerm'
+            command: 'destroy'
+            environmentServiceNameAzureRM: 'DevTestServiceConn'
+
+
+
+
+
+
+trigger:
+- none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: 'latest'
+  backendServiceArm: 'DevTestServiceConn'
+  backendAzureRmResourceGroupName: 'TerraformRG'
+  backendAzureRmStorageAccountName: 'terraformsa1203'
+  backendAzureRmContainerName: 'tfstate'
+  backendAzureRmKey: 'terraform.tfstate'
+
+stages:
+  - stage: tfvalidate
+    jobs:
+      - job: validate
+        continueOnError: false
+        steps:
+        - task: TerraformInstaller@1
+          displayName: tfinstall
+          inputs:
+            terraformVersion: $(terraformVersion)
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: $(backendServiceArm)
+            backendAzureRmResourceGroupName: $(backendAzureRmResourceGroupName)
+            backendAzureRmStorageAccountName: $(backendAzureRmStorageAccountName)
+            backendAzureRmContainerName: $(backendAzureRmContainerName)
+            backendAzureRmKey: $(backendAzureRmKey)
+
+        - task: TerraformTaskV4@4
+          displayName: validate
+          inputs:
+            provider: 'azurerm'
+            command: 'validate'
+          
+  - stage: tfdeploy
+    condition: succeeded('tfvalidate')
+    dependsOn: tfvalidate
+    jobs:
+      - job: apply
+        steps:
+        - task: TerraformInstaller@1
+          displayName: tfinstall
+          inputs:
+            terraformVersion: $(terraformVersion)
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: $(backendServiceArm)
+            backendAzureRmResourceGroupName: $(backendAzureRmResourceGroupName)
+            backendAzureRmStorageAccountName: $(backendAzureRmStorageAccountName)
+            backendAzureRmContainerName: $(backendAzureRmContainerName)
+            backendAzureRmKey: $(backendAzureRmKey)
+          
+        - task: TerraformTaskV4@4
+          displayName: plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            environmentServiceNameAzureRM: $(backendServiceArm)
+        
+        - task: TerraformTaskV4@4
+          displayName: apply
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            environmentServiceNameAzureRM: $(backendServiceArm)
+
+  - stage: tfdestroy
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/destroy-branch'))
+    dependsOn: tfdeploy
+    jobs:
+      - job: destroy
+        steps:
+        - task: TerraformInstaller@1
+          displayName: tfinstall
+          inputs:
+            terraformVersion: $(terraformVersion)
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: $(backendServiceArm)
+            backendAzureRmResourceGroupName: $(backendAzureRmResourceGroupName)
+            backendAzureRmStorageAccountName: $(backendAzureRmStorageAccountName)
+            backendAzureRmContainerName: $(backendAzureRmContainerName)
+            backendAzureRmKey: $(backendAzureRmKey)
+        
+        - task: TerraformTaskV4@4
+          displayName: destroy
+          inputs:
+            provider: 'azurerm'
+            command: 'destroy'
+            environmentServiceNameAzureRM: $(backendServiceArm)
+            commandOptions: '-auto-approve'

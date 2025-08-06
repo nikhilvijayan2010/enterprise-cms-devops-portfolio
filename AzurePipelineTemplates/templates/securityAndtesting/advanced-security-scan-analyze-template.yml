@@ -1,0 +1,24 @@
+# -----------------------------------------------------------------------------
+# Author: Jamiu Ejiwumi
+# Date: 09/01/2025
+# Description: Build pipeline template for building and publishing our solutions.
+# -----------------------------------------------------------------------------
+
+parameters:
+  - name: continueOnError
+    type: boolean
+    default: true
+  # - name: stageName
+
+steps:
+  - task: AdvancedSecurity-Dependency-Scanning@1
+    displayName: AdvancedSecurity Scan with CodeQL
+    inputs:
+      continueOnError: ${{ parameters.continueOnError }}
+      DependencyScanning: 600
+
+  - task: AdvancedSecurity-Codeql-Analyze@1
+    displayName: Analyze with CodeQL
+    inputs:
+      WaitForProcessing: true
+      continueOnError: ${{ parameters.continueOnError }}

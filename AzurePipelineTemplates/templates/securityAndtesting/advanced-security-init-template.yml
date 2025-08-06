@@ -1,0 +1,22 @@
+# -----------------------------------------------------------------------------
+# Author: Jamiu Ejiwumi
+# Date: 09/01/2025
+# Description: Build pipeline template for building and publishing our solutions.
+# -----------------------------------------------------------------------------
+
+parameters:
+  - name: languages
+    type: string
+  - name: continueOnError
+    type: boolean
+    default: true
+
+
+
+steps:
+  - task: AdvancedSecurity-Codeql-Init@1
+    displayName: Initialize CodeQL
+    inputs:
+      languages: ${{ parameters.languages }}
+      enableAutomaticCodeQLInstall: true
+      continueOnError: ${{ parameters.continueOnError }}

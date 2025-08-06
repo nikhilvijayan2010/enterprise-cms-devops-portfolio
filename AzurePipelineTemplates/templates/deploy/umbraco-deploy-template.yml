@@ -1,0 +1,177 @@
+# -----------------------------------------------------------------------------
+# Author: Jamiu Ejiwumi
+# Date: 09/01/2024
+# Description: Build pipeline template for building and publishing our solutions.
+# -----------------------------------------------------------------------------
+
+parameters:
+- name: stageName
+- name: environment
+- name: WebAppName
+- name: azureServiceConnection
+- name: vmImageName
+- name: dependsOn
+- name: ArtifactName
+  default: 'drop'
+- name: deployToSlotOrASE
+  default: false
+- name: slotName
+  default: 'staging'
+- name: resourceGroupName
+- name: swapStageName
+  default: 'SwapSlots'
+
+stages:
+- stage: ${{ parameters.stageName }}
+  displayName: Deploy to ${{ parameters.WebAppName }}
+  dependsOn: ${{ parameters.dependsOn }}
+
+  # This condition is to runs the stages based on branch and environment.
+  condition: |
+    and(
+      succeeded(),
+      or(
+        and(
+          eq('${{ parameters.environment }}', 'Development'),
+          or(
+            eq(variables['Build.SourceBranchName'], 'Development'),
+            eq(variables['Build.SourceBranchName'], 'main')
+          )
+        ),
+        and(
+          eq('${{ parameters.environment }}', 'Production'),
+          eq(variables['Build.SourceBranchName'], 'main')
+        )
+      )
+    )
+
+  # Main deployment job, will deploy based on environments
+  jobs:
+  - deployment: DeployJob
+    displayName: Deploy to ${{ parameters.WebAppName }}
+    environment: '${{ parameters.environment }}-slot-deploy'
+    pool:
+      vmImage: ${{ parameters.vmImageName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: ${{ parameters.ArtifactName }}
+
+          - task: AzureRmWebAppDeployment@5
+            displayName: 'Deploy ${{ parameters.WebAppName }} ${{ parameters.environment }}'
+            inputs:
+              ConnectionType: 'AzureRM'
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              appType: 'webApp'
+              WebAppName: ${{ parameters.WebAppName }}
+              ResourceGroupName: ${{ parameters.resourceGroupName }}
+              packageForLinux: '$(Pipeline.Workspace)/${{ parameters.ArtifactName }}/**/*.zip'
+              enableCustomDeployment: true
+              DeploymentType: 'webDeploy'
+              TakeAppOfflineFlag: true
+              ExcludeFilesFromAppDataFlag: False
+              deployToSlotOrASE: ${{ parameters.deployToSlotOrASE }}
+              SlotName: ${{ parameters.slotName }}
+
+          - task: AzureAppServiceManage@0
+            displayName: Restart ${{ parameters.WebAppName }} App Service
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              Action: 'Restart Azure App Service'
+              WebAppName: ${{ parameters.WebAppName }}
+              deployToSlotOrASE: ${{ parameters.deployToSlotOrASE }}
+              SlotName: ${{ parameters.slotName }}
+
+          # Warm-up and health check logic
+          - powershell: |
+              Write-Host "Checking if site is live after deployment..."
+              for ($i = 1; $i -le 10; $i++) {
+                  try {
+                      $response = Invoke-WebRequest -Uri "https://${{ parameters.WebAppName }}-${{ parameters.slotName }}.azurewebsites.net/" -UseBasicParsing -Method Head
+                      $httpStatus = $response.StatusCode
+                  } catch {
+                      if ($_.Exception.Response -ne $null) {
+                          $httpStatus = $_.Exception.Response.StatusCode.value__
+                      } else {
+                          $httpStatus = 0
+                      }
+                  }
+
+                  Write-Host "Attempt ${i}: HTTP Status = ${httpStatus}"
+
+                  if ($httpStatus -eq 200) {
+                      Write-Host "✅ Site is up and healthy!"
+                      exit 0
+                  }
+
+                  Write-Host "❌ Site not ready. Retrying in 10 seconds..."
+                  Start-Sleep -Seconds 10
+              }
+
+              Write-Host "❌ Site did not come up. Setting flag to trigger redeployment..."
+              Write-Host "##vso[task.setvariable variable=RedeployRequired]true"
+            displayName: 'Check if site is up after deploy'
+
+          - download: current
+            artifact: ${{ parameters.ArtifactName }}
+            condition: eq(variables['RedeployRequired'], 'true')
+            displayName: 'Re-download artifacts for redeployment'
+
+          - task: AzureRmWebAppDeployment@5
+            displayName: 'Re-deploy ${{ parameters.WebAppName }} (Retry)'
+            condition: eq(variables['RedeployRequired'], 'true')
+            inputs:
+              ConnectionType: 'AzureRM'
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              appType: 'webApp'
+              WebAppName: ${{ parameters.WebAppName }}
+              ResourceGroupName: ${{ parameters.resourceGroupName }}
+              packageForLinux: '$(Pipeline.Workspace)/${{ parameters.ArtifactName }}/**/*.zip'
+              enableCustomDeployment: true
+              DeploymentType: 'webDeploy'
+              TakeAppOfflineFlag: true
+              ExcludeFilesFromAppDataFlag: False
+              deployToSlotOrASE: ${{ parameters.deployToSlotOrASE }}
+              SlotName: ${{ parameters.slotName }}
+
+          - task: AzureAppServiceManage@0
+            displayName: Restart ${{ parameters.WebAppName }} App Service (Retry)
+            condition: eq(variables['RedeployRequired'], 'true')
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              Action: 'Restart Azure App Service'
+              WebAppName: ${{ parameters.WebAppName }}
+              deployToSlotOrASE: ${{ parameters.deployToSlotOrASE }}
+              SlotName: ${{ parameters.slotName }}
+          
+- stage: ${{ parameters.swapStageName }}
+  displayName: 'Swap Slots to Production'
+  dependsOn: ${{ parameters.stageName }}
+  condition: |
+    and(
+      succeeded(),
+      eq('${{ parameters.deployToSlotOrASE }}', 'true'), 
+      or( 
+        eq('${{ parameters.environment }}', 'Production'),
+        eq('${{ parameters.environment }}', 'Development')
+      )
+    )
+  jobs:
+    - deployment: Swap
+      displayName: 'Swap ${{ parameters.slotName }}  to Production'
+      environment: ${{ parameters.environment }}
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - task: AzureAppServiceManage@0
+                displayName: 'Swap Slots: ${{ parameters.slotName }} → Production'
+                inputs:
+                  azureSubscription: ${{ parameters.azureServiceConnection }}
+                  Action: 'Swap Slots'
+                  ResourceGroupName: ${{ parameters.resourceGroupName }}
+                  WebAppName: ${{ parameters.WebAppName }}
+                  SourceSlot: ${{ parameters.slotName }}
+                  TargetSlot: 'production'

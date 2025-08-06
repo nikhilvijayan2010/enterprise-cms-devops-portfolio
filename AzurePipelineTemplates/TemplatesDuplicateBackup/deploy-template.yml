@@ -1,0 +1,45 @@
+parameters:
+- name: stageName
+- name: environment
+- name: WebAppName
+- name: azureServiceConnection
+- name: vmImageName
+- name: dependsOn
+- name: ArtifactName
+  default: 'drop'
+
+stages:
+- stage: ${{ parameters.stageName }}
+  displayName: Deploy to ${{ parameters.WebAppName }}
+  dependsOn: ${{ parameters.dependsOn }}
+
+  # This condition runs the stages based on branch and environment.
+  condition: |
+    and(
+      succeeded(),
+      or(
+        and(eq(variables['Build.SourceBranch'], 'refs/heads/Release'), eq('${{ parameters.environment }}', 'Production')),
+        and(eq(variables['Build.SourceBranch'], 'refs/heads/Development'), eq('${{ parameters.environment }}', 'Development'))
+      )
+    )
+
+  # Main deployment job, will deploy based on environments
+  jobs:
+  - deployment: DeployJob
+    displayName: Deploy to ${{ parameters.WebAppName }} 
+    environment: ${{ parameters.environment }}
+    pool:
+      vmImage: ${{ parameters.vmImageName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+
+          - template: webapp-template.yml
+            parameters:
+              azureServiceConnection: ${{ parameters.azureServiceConnection }}
+              WebAppName: ${{ parameters.WebAppName }}
+              ArtifactName: ${{ parameters.ArtifactName }}
+              environment: ${{ parameters.environment }}

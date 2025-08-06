@@ -1,0 +1,25 @@
+# set-permissions-template.yml
+parameters:
+  - name: vmImageName
+    default: 'windows-latest'
+  - name: stageName
+  - name: dependsOn
+
+stages:
+  - stage: SetPermissionsStage
+    displayName: Set Permissions Stage
+    jobs:
+      - job: SetPermissions
+        displayName: Set Permissions Job
+        pool:
+          vmImage: ${{ parameters.vmImageName }}
+        steps:
+          - script: |
+              echo Setting permissions for Umbraco folders
+              chmod -R 755 /home/site/wwwroot/wwwroot/App_Plugins
+              chmod -R 755 /home/site/wwwroot/umbraco
+              chmod -R 755 /home/site/wwwroot/wwwroot/css
+              chmod -R 755 /home/site/wwwroot/wwwroot/images
+              chmod -R 755 /home/site/wwwroot/wwwroot/scripts
+              chmod -R 755 /home/site/wwwroot/wwwroot/slick
+            displayName: 'Set Umbraco folder permissions'

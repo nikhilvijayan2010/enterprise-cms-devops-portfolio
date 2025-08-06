@@ -1,0 +1,22 @@
+parameters:
+- name: azureServiceConnection
+- name: WebAppName
+- name: ArtifactName
+- name: environment
+
+steps:
+- task: AzureRmWebAppDeployment@4
+  displayName: 'Deploy ${{ parameters.WebAppName }} ${{ parameters.environment }}'
+  inputs:
+    ConnectionType: 'AzureRM'
+    azureSubscription: ${{ parameters.azureServiceConnection }}
+    appType: 'webApp'
+    WebAppName: ${{ parameters.WebAppName }}
+    packageForLinux: '$(Pipeline.Workspace)/${{ parameters.ArtifactName }}/**/*.zip'
+
+- task: AzureAppServiceManage@0
+  displayName: Restart ${{ parameters.WebAppName }} App Service
+  inputs:
+    azureSubscription: ${{ parameters.azureServiceConnection }}
+    Action: 'Restart Azure App Service'
+    WebAppName: ${{ parameters.WebAppName }}

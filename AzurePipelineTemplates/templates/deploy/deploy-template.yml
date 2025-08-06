@@ -1,0 +1,109 @@
+# -----------------------------------------------------------------------------
+# Author: Jamiu Ejiwumi
+# Date: 09/01/2024
+# Description: Build pipeline template for building and publishing our solutions.
+# -----------------------------------------------------------------------------
+
+parameters:
+- name: stageName
+- name: environment
+- name: WebAppName
+- name: azureServiceConnection
+- name: vmImageName
+- name: dependsOn
+  type: object  # allows array input
+  default: []
+- name: ArtifactName
+  default: 'drop'
+- name: deployToSlotOrASE
+  default: false
+- name: slotName
+  default: 'staging'
+- name: resourceGroupName
+- name: swapStageName
+  default: 'SwapSlots'
+- name: packageFileName
+
+stages:
+- stage: ${{ parameters.stageName }}
+  displayName: Deploy to ${{ parameters.WebAppName }}
+  dependsOn: ${{ parameters.dependsOn }}
+
+  # This condition runs the stages based on branch and environment.
+  condition: |
+    and(
+      succeeded(),
+      or(
+        and(
+          eq('${{ parameters.environment }}', 'Development'),
+          or(
+            eq(variables['Build.SourceBranchName'], 'Development'),
+            eq(variables['Build.SourceBranchName'], 'main')
+          )
+        ),
+        and(
+          eq('${{ parameters.environment }}', 'Production'),
+          eq(variables['Build.SourceBranchName'], 'main')
+        )
+      )
+    )
+
+  # Main deployment to Slot, will deploy based on environments
+  jobs:
+  - deployment: DeployJob
+    displayName: Deploy to ${{ parameters.WebAppName }} 
+    environment: '${{ parameters.environment }}-slot-deploy'
+    pool:
+      vmImage: ${{ parameters.vmImageName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: ${{ parameters.ArtifactName }}
+
+          - script: echo "Deploying build $(Build.BuildId) from branch $(Build.SourceBranchName)"
+            displayName: 'Show Build Info'
+
+          - task: AzureRmWebAppDeployment@4
+            displayName: 'Deploy ${{ parameters.WebAppName }} ${{ parameters.environment }}'
+            inputs:
+              ConnectionType: 'AzureRM'
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              appType: 'webApp'
+              WebAppName: ${{ parameters.WebAppName }}
+              ResourceGroupName: ${{ parameters.resourceGroupName }}
+              packageForLinux: '$(Pipeline.Workspace)/${{ parameters.ArtifactName }}/${{ parameters.packageFileName }}'
+              deployToSlotOrASE: ${{ parameters.deployToSlotOrASE }}
+              SlotName: ${{ parameters.slotName }}
+
+# Main deployment to Production, will deploy based on environments and requires approvals
+- stage: ${{ parameters.swapStageName }}
+  displayName: 'Hey! Swap Slots ?'
+  dependsOn: ${{ parameters.stageName }}
+  condition: |
+    and(
+      succeeded(),
+      eq('${{ parameters.deployToSlotOrASE }}', 'true'), 
+      or( 
+        eq('${{ parameters.environment }}', 'Production'),
+        eq('${{ parameters.environment }}', 'Development')
+      )
+    )
+  jobs:
+    - deployment: Swap
+      displayName: 'Swap ${{ parameters.slotName }}  to Production'
+      environment: ${{ parameters.environment }}
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - task: AzureAppServiceManage@0
+                displayName: 'Swap Slots: ${{ parameters.slotName }} → Production'
+                inputs:
+                  azureSubscription: ${{ parameters.azureServiceConnection }}
+                  Action: 'Swap Slots'
+                  WebAppName: ${{ parameters.WebAppName }}
+                  ResourceGroupName: ${{ parameters.resourceGroupName }}
+                  SourceSlot: ${{ parameters.slotName }}
+                  TargetSlot: 'production'

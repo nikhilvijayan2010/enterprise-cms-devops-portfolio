@@ -1,0 +1,4 @@
+variables:
+  azureServiceConnection: 'Enterprise Dev/Test(6265bce6-d9a1-412b-b2c9-565a7d6880a7)'
+  WebAppNameProd: 'RLVarietySelectTool-Prod'
+  vmImageName: 'windows-latest'

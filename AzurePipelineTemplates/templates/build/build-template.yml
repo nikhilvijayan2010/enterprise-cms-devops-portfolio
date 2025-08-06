@@ -1,0 +1,87 @@
+# -----------------------------------------------------------------------------
+# Author: Jamiu Ejiwumi
+# Date: 09/01/2025
+# Description: Build pipeline template for building and publishing our solutions.
+# -----------------------------------------------------------------------------
+
+# Define pipeline parameters
+parameters:
+  - name: solution
+    default: '**/*.sln'
+  - name: Platform
+    default: 'Any CPU'
+  - name: Configuration 
+    default: 'Release'
+  - name: ArtifactName
+    default: 'drop'
+  - name: vmImageName
+    default: 'windows-latest'
+  - name: msbuildArchitecture
+    default: 'x64'
+  - name: stageName
+  # Parameter to control whether to run advanced security tasks
+  - name: runAdvancedSecurity
+    type: boolean
+    default: true
+
+# Define stages
+stages:
+  - stage: Build
+    displayName: Build Solution
+    jobs:
+      - job: Build
+        displayName: Build the ${{ parameters.solution }}
+        pool:
+          vmImage: ${{ parameters.vmImageName }}
+
+        steps:
+          - checkout: self
+            displayName: 'Checkout repository'
+
+          # Conditionally include the advanced security initialization template
+          - ${{ if parameters.runAdvancedSecurity }}:
+              - template: securityAndtesting/advanced-security-init-template.yml
+                parameters:
+                  languages: "csharp, javascript"
+                  continueOnError: true
+
+          - task: NuGetToolInstaller@1
+            displayName: 'Install NuGet CLI'
+          
+          # - task: Cache@2
+          #   displayName: 'Cache NuGet packages'
+          #   inputs:
+          #     key: 'nuget | "$(Agent.OS)" | **/packages.lock.json'
+          #     restoreKeys: |
+          #       nuget | "$(Agent.OS)"
+          #     path: $(NUGET_PACKAGES)
+
+          - task: NuGetCommand@2
+            displayName: 'Restore NuGet packages'
+            inputs:
+              restoreSolution: '${{ parameters.solution }}'
+              # vstsFeed: '${{ parameters.vstsFeed }}'
+
+          - task: VSBuild@1
+            displayName: 'Build solution ${{ parameters.solution }}'
+            inputs:
+              solution: '${{ parameters.solution }}'
+              msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactstagingdirectory)\\" -maxcpucount:4'
+              platform: '${{ parameters.Platform }}'
+              configuration: '${{ parameters.Configuration }}'
+              clean: true
+              maximumCpuCount: true
+              msbuildArchitecture: '${{ parameters.msbuildArchitecture }}'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Artifact: ${{ parameters.ArtifactName }}'
+            condition: succeededOrFailed()
+            inputs:
+              PathtoPublish: '$(build.artifactstagingdirectory)'
+              ArtifactName: '${{ parameters.ArtifactName }}'
+
+          # Conditionally include the advanced security scan template
+          - ${{ if parameters.runAdvancedSecurity }}:
+              - template: securityAndtesting/advanced-security-scan-analyze-template.yml
+                parameters:
+                  continueOnError: true

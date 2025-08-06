@@ -1,0 +1,23 @@
+parameters:
+  - name: licenseFileName
+    type: string
+    default: 'umbracoforms.lic'
+
+
+steps:
+# Download the secure file
+  - task: DownloadSecureFile@1
+    name: UmbracoLicense
+    displayName: 'Download Umbraco Forms License'
+    inputs:
+      secureFile: 'umbracoforms.lic'
+
+  # Copy the license file into /Licenses folder inside artifact staging directory
+  - task: PowerShell@2
+    displayName: 'Place Umbraco Forms License in Licenses Folder'
+    inputs:
+      targetType: 'inline'
+      script: |
+          $licenseFolder = "$(Build.ArtifactStagingDirectory)\Licenses"
+          New-Item -ItemType Directory -Path $licenseFolder -Force
+          Copy-Item "$(UmbracoLicense.secureFilePath)" -Destination "$licenseFolder\umbracoforms.lic" -Force

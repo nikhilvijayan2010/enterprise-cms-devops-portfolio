@@ -1,0 +1,70 @@
+parameters:
+- name: solution
+  default: '**/*.sln'
+- name: Platform
+  default: 'Any CPU'
+- name: Configuration 
+  default: 'Release'
+- name: ArtifactName
+  default: 'drop'
+- name: vmImageName
+  default: 'windows-latest'
+- name: msbuildArchitecture
+  default: 'x64'
+- name: stageName
+
+stages:
+- stage: Build
+  displayName: Build Soln
+  jobs:
+  - job: Build
+    displayName: Build the ${{ parameters.solution }}
+    pool:
+      vmImage: ${{ parameters.vmImageName }}
+
+    steps:
+    - checkout: self
+
+    - task: AdvancedSecurity-Codeql-Init@1
+      displayName: Initialize CodeQL
+      inputs:
+        languages: "csharp, javascript"
+        enableAutomaticCodeQLInstall: true
+        continueOnError: true
+
+    - task: NuGetToolInstaller@1
+      displayName: Install Nuget
+    
+    - task: NuGetCommand@2
+      inputs:
+        restoreSolution: '${{ parameters.solution }}'
+
+    - task: VSBuild@1
+      displayName: 'Build solution **/*.sln'
+      inputs:
+        solution: '${{ parameters.solution }}'
+        msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactstagingdirectory)\\" -maxcpucount:4'
+        platform: '${{ parameters.Platform }}'
+        configuration: '${{ parameters.Configuration }}'
+        clean: true
+        maximumCpuCount: true
+        msbuildArchitecture: '${{ parameters.msbuildArchitecture }}'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact: drop'
+      condition: succeededOrFailed()
+      inputs:
+        PathtoPublish: '$(build.artifactstagingdirectory)'
+        ArtifactName: '${{ parameters.ArtifactName }}'
+
+    - task: AdvancedSecurity-Dependency-Scanning@1
+      displayName: AdvancedSecurity Scan with CodeQL
+      inputs:
+        continueOnError: true
+        DependencyScanning: 600
+
+    - task: AdvancedSecurity-Codeql-Analyze@1
+      displayName: Analyze with CodeQL
+      inputs:
+        WaitForProcessing: true
+        continueOnError: true

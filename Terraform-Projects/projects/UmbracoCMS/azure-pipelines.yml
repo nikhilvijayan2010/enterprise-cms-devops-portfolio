@@ -1,0 +1,78 @@
+trigger:
+  branches:
+    include:
+      - none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: tfvalidate
+    jobs:
+      - job: validate
+        continueOnError: false
+        steps:
+        - task: TerraformInstaller@1
+          displayName: Install Terraform
+          inputs:
+            terraformVersion: 'latest'
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            workingDirectory: $(system.DefaultWorkingDirectory)/projects/Dairy_Breeding_Genetics/dev
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: 'DevTestServiceConn'
+            backendAzureRmResourceGroupName: 'TerraformRG'
+            backendAzureRmStorageAccountName: 'terraformsa1203'
+            backendAzureRmContainerName: 'cmsstate'
+            backendAzureRmKey: 'terraform.tfstate'
+
+        - task: TerraformTaskV4@4
+          displayName: Terraform Validate
+          inputs:
+            provider: 'azurerm'
+            command: 'validate'
+            workingDirectory: $(system.DefaultWorkingDirectory)/projects/Dairy_Breeding_Genetics/dev
+          
+  - stage: tfdeploy
+    condition: succeeded('tfvalidate')
+    dependsOn: tfvalidate
+    jobs:
+      - job: apply
+        # environment: Development
+        steps:
+        - task: TerraformInstaller@1
+          displayName: Install Terraform
+          inputs:
+            terraformVersion: 'latest'
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: 'DevTestServiceConn'
+            backendAzureRmResourceGroupName: 'TerraformRG'
+            backendAzureRmStorageAccountName: 'terraformsa1203'
+            backendAzureRmContainerName: 'cmsstate'
+            backendAzureRmKey: 'terraform.tfstate'
+            workingDirectory: $(system.DefaultWorkingDirectory)/projects/Dairy_Breeding_Genetics/dev
+          
+        - task: TerraformTaskV4@4
+          displayName: Terraform Plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            environmentServiceNameAzureRM: 'DevTestServiceConn'
+            workingDirectory: $(system.DefaultWorkingDirectory)/projects/Dairy_Breeding_Genetics/dev
+        
+        - task: TerraformTaskV4@4
+          displayName: Terraform Apply
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            environmentServiceNameAzureRM: 'DevTestServiceConn'
+            additionalArguments: '-auto-approve=false'
+            workingDirectory: $(system.DefaultWorkingDirectory)/projects/Dairy_Breeding_Genetics/dev

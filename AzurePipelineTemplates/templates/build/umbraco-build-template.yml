@@ -1,0 +1,96 @@
+# -----------------------------------------------------------------------------
+# Author: Jamiu Ejiwumi
+# Date: 09/01/2024
+# Description: Build pipeline template for building and publishing our solutions.
+# -----------------------------------------------------------------------------
+
+parameters:
+  - name: solution
+    default: '**/*.sln'
+  - name: Platform
+    default: 'Any CPU'
+  - name: Configuration 
+    default: 'Release'
+  - name: ArtifactName
+    default: 'drop'
+  - name: vmImageName
+    default: 'windows-latest'
+  - name: msbuildArchitecture
+    default: 'x64'
+  - name: stageName
+  # I included this parameter to control whether to run advanced security tasks
+  - name: runAdvancedSecurity
+    type: boolean
+    default: true
+  - name: EnvironmentName
+    default: 'Development'
+
+stages:
+  - stage: Build
+    displayName: Build Soln
+    jobs:
+      - job: Build
+        displayName: Build the ${{ parameters.solution }}
+        pool:
+          vmImage: ${{ parameters.vmImageName }}
+
+        steps:
+          - checkout: self
+
+          # advanced security initialization template
+          - ${{ if parameters.runAdvancedSecurity }}:
+              - template: securityAndtesting/advanced-security-init-template.yml
+                parameters:
+                  languages: "csharp, javascript"
+                  continueOnError: true
+
+          - task: NuGetToolInstaller@1
+            displayName: Install Nuget
+
+          - task: NuGetCommand@2
+            displayName: Restore NuGet packages
+            inputs:
+              restoreSolution: '${{ parameters.solution }}'
+
+          - task: VSBuild@1
+            displayName: 'Build solution **/*.sln'
+            inputs:
+              solution: '${{ parameters.solution }}'
+              msbuildArgs: '/p:DeployOnBuild=true /p:DeployDefaultTarget=WebPublish /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:IncludeAllContentForSelfExtract=true /p:DeleteExistingFiles=True /p:SkipInvalidConfigurations=true /p:IncludeSetAclProviderOnDestination=False /p:AutoParameterizationWebConfigConnectionStrings=False /p:platform="$(BuildPlatform)" /p:configuration="$(BuildConfiguration)" /p:PackageLocation="$(Build.ArtifactStagingDirectory)" /p:EnvironmentName=$(EnvironmentName)'
+              platform: '${{ parameters.Platform }}'
+              configuration: '${{ parameters.Configuration }}'
+              clean: true
+              maximumCpuCount: true
+              msbuildArchitecture: '${{ parameters.msbuildArchitecture }}'
+
+          # - task: DownloadSecureFile@1
+          #   name: UmbracoLicense
+          #   displayName: 'Download Umbraco Forms License'
+          #   inputs:
+          #     secureFile: 'umbracoforms.lic'
+
+          # # Copy the license file into /Licenses folder inside artifact staging directory
+          # - task: PowerShell@2
+          #   displayName: 'Place Umbraco Forms License in Licenses Folder'
+          #   inputs:
+          #     targetType: 'inline'
+          #     script: |
+          #         $licenseFolder = "$(Build.ArtifactStagingDirectory)\Licenses"
+          #         New-Item -ItemType Directory -Path $licenseFolder -Force
+          #         Copy-Item "$(UmbracoLicense.secureFilePath)" -Destination "$licenseFolder\umbracoforms.lic" -Force
+          
+          - script: dir $(Build.ArtifactStagingDirectory)
+            displayName: 'List contents of Artifact Staging Directory'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Artifact: drop'
+            condition: succeededOrFailed()
+            inputs:
+              PathtoPublish: '$(build.artifactstagingdirectory)'
+              ArtifactName: '${{ parameters.ArtifactName }}'
+
+          # advanced security initialization template
+          - ${{ if parameters.runAdvancedSecurity }}:
+              - template: securityAndtesting/advanced-security-scan-analyze-template.yml
+                parameters:
+                  continueOnError: true
